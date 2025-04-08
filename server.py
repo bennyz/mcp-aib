@@ -2,7 +2,17 @@ from mcp.server.fastmcp import FastMCP
 import os
 import tempfile
 import yaml
-from aib import ManifestLoader, exceptions
+import sys
+from pathlib import Path
+
+# Add the automotive-image-builder directory to the Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+aib_dir = os.path.join(script_dir, "automotive-image-builder")
+sys.path.append(aib_dir)
+
+# Now import from the aib module
+from aib.simple import ManifestLoader
+from aib import exceptions
 
 mcp = FastMCP("Demo")
 
@@ -46,7 +56,7 @@ def validate_yaml(yml: str):
             # Set up required defines for the manifest loader
             script_dir = os.path.dirname(os.path.abspath(__file__))
             defines = {
-                "_basedir": script_dir,  # Path to the directory containing aib.py
+                "_basedir": aib_dir,  # Path to the directory containing aib module
                 "_workdir": tempfile.gettempdir(),  # Use temp dir as working dir
                 "use_fusa": False,  # Not using FUSA mode
                 "arch": "x86_64"  # Default architecture
@@ -117,11 +127,12 @@ def get_schema():
     Returns:
         The schema YAML content as a string
     """
-    # Get the base directory (same as used in ManifestLoader)
+    # Get the base directory for the AIB module
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    aib_dir = os.path.join(script_dir, "automotive-image-builder")
 
     # Construct the path to the schema file
-    schema_path = os.path.join(script_dir, "files/manifest_schema.yml")
+    schema_path = os.path.join(aib_dir, "files/manifest_schema.yml")
 
     # Read and return the schema file content
     try:
@@ -129,6 +140,92 @@ def get_schema():
             return schema_file.read()
     except FileNotFoundError:
         return (f"Schema file not found at {schema_path}. Make sure the file exists at "
-                f"'files/manifest_schema.yml' relative to the directory containing aib.py.")
+                f"'files/manifest_schema.yml' relative to the AIB module directory.")
     except Exception as e:
         return f"Error reading schema file: {str(e)}"
+
+@mcp.tool()
+def get_directory_tree():
+    """
+    Returns a tree representation of the automotive-image-builder directory.
+
+    Returns:
+        A string containing the directory tree structure.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    aib_dir = os.path.join(script_dir, "automotive-image-builder")
+
+    if not os.path.exists(aib_dir):
+        return f"Error: The directory {aib_dir} does not exist."
+
+    result = []
+
+    def generate_tree(path, prefix="", is_last=True, level=0):
+        entries = [entry for entry in os.listdir(path) if not entry.startswith('.')]
+        entries = sorted(entries, key=lambda e: (not os.path.isdir(os.path.join(path, e)), e))
+
+        count = len(entries)
+        for i, entry in enumerate(entries):
+            is_last_entry = i == count - 1
+            full_path = os.path.join(path, entry)
+
+            if level > 10:
+                if os.path.isdir(full_path):
+                    result.append(f"{prefix}{'└── ' if is_last_entry else '├── '}{entry}/ (...)")
+                continue
+
+            if os.path.isdir(full_path):
+                result.append(f"{prefix}{'└── ' if is_last_entry else '├── '}{entry}/")
+                next_prefix = f"{prefix}{'    ' if is_last_entry else '│   '}"
+                generate_tree(full_path, next_prefix, is_last_entry, level + 1)
+            else:
+                result.append(f"{prefix}{'└── ' if is_last_entry else '├── '}{entry}")
+
+    result.append("automotive-image-builder/")
+    generate_tree(aib_dir, level=0)
+
+    return "\n".join(result)
+
+@mcp.tool()
+def read_file(file_path: str):
+    """
+    Reads a file from the automotive-image-builder directory.
+
+    Args:
+        file_path: The path to the file, relative to the automotive-image-builder directory.
+                    Example: "aib/simple.py" or "files/manifest_schema.yml"
+
+    Returns:
+        The content of the file as a string, or an error message if the file cannot be read.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    aib_dir = os.path.join(script_dir, "automotive-image-builder")
+    full_path = os.path.join(aib_dir, file_path)
+
+    norm_path = os.path.normpath(full_path)
+    if not norm_path.startswith(aib_dir):
+        return "Error: Path traversal attempt detected. The path must be within the automotive-image-builder directory."
+
+    try:
+        if not os.path.exists(norm_path):
+            return f"Error: The file {file_path} does not exist."
+
+        if os.path.isdir(norm_path):
+            entries = sorted(os.listdir(norm_path))
+            return f"Directory listing for {file_path}:\n" + "\n".join(entries)
+
+        if os.path.getsize(norm_path) > 1024 * 1024:  # 1MB limit
+            return f"Error: The file {file_path} is too large (>1MB) to display."
+
+        with open(norm_path, 'r', errors='replace') as f:
+            return f.read()
+
+    except Exception as e:
+        return f"Error reading file {file_path}: {str(e)}"
+
+@mcp.tool()
+def recommended_files():
+    """
+    Returns a list of recommended directories or files to look at
+    """
+    return ["examples/", "targets", "simple.py", "README.md", "main.py"]

@@ -1,0 +1,3 @@
+[submodule "automotive-image-builder"]
+	path = automotive-image-builder
+	url = https://gitlab.com/CentOS/automotive/src/automotive-image-builder.git
