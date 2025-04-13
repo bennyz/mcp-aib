@@ -3,18 +3,15 @@ import os
 import tempfile
 import yaml
 import sys
-from pathlib import Path
 
-# Add the automotive-image-builder directory to the Python path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 aib_dir = os.path.join(script_dir, "automotive-image-builder")
 sys.path.append(aib_dir)
 
-# Now import from the aib module
 from aib.simple import ManifestLoader
 from aib import exceptions
 
-mcp = FastMCP("Demo")
+mcp = FastMCP("AIB")
 
 @mcp.tool()
 def validate_yaml(yml: str):
@@ -31,7 +28,6 @@ def validate_yaml(yml: str):
         - errors: detailed error information if invalid
     """
     try:
-        # Parse the YAML first to catch basic syntax errors
         try:
             yaml_data = yaml.safe_load(yml)
             if not isinstance(yaml_data, dict):
@@ -47,13 +43,11 @@ def validate_yaml(yml: str):
                 "errors": [str(e)]
             }
 
-        # Create a temporary file to use with the loader
         with tempfile.NamedTemporaryFile(suffix='.yaml', mode='w', delete=False) as temp_file:
             temp_path = temp_file.name
             yaml.dump(yaml_data, temp_file)
 
         try:
-            # Set up required defines for the manifest loader
             script_dir = os.path.dirname(os.path.abspath(__file__))
             defines = {
                 "_basedir": aib_dir,  # Path to the directory containing aib module
@@ -62,10 +56,8 @@ def validate_yaml(yml: str):
                 "arch": "x86_64"  # Default architecture
             }
 
-            # Create a manifest loader with our defines
             loader = ManifestLoader(defines)
 
-            # Validate the manifest
             loader.load(temp_path, os.path.dirname(temp_path))
 
             return {
@@ -124,17 +116,33 @@ def get_schema():
     """
     Returns the AIB manifest schema as a string.
 
+    <IMPORTANT>
+        Unless the user explicitly asks for it, make you example simple and succint. Do not include default empty sections.
+        For instance:
+            ```
+            name: simple
+
+            content:
+              rpms:
+                - vim
+
+            auth:
+              # "password"
+              root_password: $6$xoLqEUz0cGGJRx01$H3H/bFm0myJPULNMtbSsOFd/2BnHqHkMD92Sfxd.EKM9hXTWSmELG8cf205l6dktomuTcgKGGtGDgtvHVXSWU.
+            ```
+
+        Under no circumstance should you make things up. You MUST always consult with all available examples and the source code using the get_directory_tree and read_file tools.
+    </IMPORTANT>
+
+
     Returns:
         The schema YAML content as a string
     """
-    # Get the base directory for the AIB module
     script_dir = os.path.dirname(os.path.abspath(__file__))
     aib_dir = os.path.join(script_dir, "automotive-image-builder")
 
-    # Construct the path to the schema file
     schema_path = os.path.join(aib_dir, "files/manifest_schema.yml")
 
-    # Read and return the schema file content
     try:
         with open(schema_path, 'r') as schema_file:
             return schema_file.read()
@@ -191,6 +199,13 @@ def read_file(file_path: str):
     """
     Reads a file from the automotive-image-builder directory.
 
+    <IMPORTANT>
+        Be sure to read these files.
+        ["examples/", "targets/", "aib/simple.py", "README.md", "aib/main.py"]
+
+        When suggesting CLI command to use, you MUST verify what you read in the README.md against automotive-image-builder/aib/main.py in case README is outdated.
+    </IMPORTANT>
+
     Args:
         file_path: The path to the file, relative to the automotive-image-builder directory.
                     Example: "aib/simple.py" or "files/manifest_schema.yml"
@@ -222,10 +237,3 @@ def read_file(file_path: str):
 
     except Exception as e:
         return f"Error reading file {file_path}: {str(e)}"
-
-@mcp.tool()
-def recommended_files():
-    """
-    Returns a list of recommended directories or files to look at
-    """
-    return ["examples/", "targets", "simple.py", "README.md", "main.py"]
