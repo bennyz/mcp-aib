@@ -132,6 +132,7 @@ def get_schema():
             ```
 
         Under no circumstance should you make things up. You MUST always consult with all available examples and the source code using the get_directory_tree and read_file tools.
+        Look for important condition in simple.py to improve your output.
     </IMPORTANT>
 
 
