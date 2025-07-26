@@ -50,10 +50,10 @@ def validate_yaml(yml: str):
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             defines = {
-                "_basedir": aib_dir,  # Path to the directory containing aib module
-                "_workdir": tempfile.gettempdir(),  # Use temp dir as working dir
-                "use_fusa": False,  # Not using FUSA mode
-                "arch": "x86_64"  # Default architecture
+                "_basedir": aib_dir,
+                "_workdir": tempfile.gettempdir(),
+                "use_fusa": False,
+                "arch": "x86_64"
             }
 
             loader = ManifestLoader(defines)
@@ -67,7 +67,7 @@ def validate_yaml(yml: str):
             }
 
         except exceptions.SimpleManifestParseError as e:
-            # Schema validation errors
+            # Schema validation error
             error_messages = [str(err.message) for err in e.errors]
             return {
                 "valid": False,
@@ -238,3 +238,267 @@ def read_file(file_path: str):
 
     except Exception as e:
         return f"Error reading file {file_path}: {str(e)}"
+
+@mcp.tool()
+def get_available_targets():
+    """
+    Returns a list of available targets that can be used in AIB manifests.
+
+    Returns:
+        A dictionary containing:
+        - targets: list of available target names
+        - details: dictionary with target descriptions and metadata
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    targets_dir = os.path.join(script_dir, "automotive-image-builder", "targets")
+
+    if not os.path.exists(targets_dir):
+        return {
+            "error": f"Targets directory not found at {targets_dir}",
+            "targets": [],
+            "details": {}
+        }
+
+    try:
+        targets = []
+        details = {}
+
+        for filename in os.listdir(targets_dir):
+            if filename.endswith('.ipp.yml') and not filename.startswith('_'):
+                target_name = filename.replace('.ipp.yml', '')
+                targets.append(target_name)
+
+                file_path = os.path.join(targets_dir, filename)
+                try:
+                    with open(file_path, 'r') as f:
+                        first_line = f.readline().strip()
+                        description = ""
+                        if first_line.startswith('#'):
+                            description = first_line[1:].strip()
+
+                        details[target_name] = {
+                            "description": description,
+                            "filename": filename
+                        }
+                except Exception as e:
+                    details[target_name] = {
+                        "description": "Unable to read description",
+                        "filename": filename,
+                        "error": str(e)
+                    }
+
+        targets.sort()
+        return {
+            "targets": targets,
+            "details": details,
+            "count": len(targets)
+        }
+
+    except Exception as e:
+        return {
+            "error": f"Error reading targets directory: {str(e)}",
+            "targets": [],
+            "details": {}
+        }
+
+@mcp.tool()
+def get_available_distros():
+    """
+    Returns a list of available distributions that can be used in AIB manifests.
+    Returns:
+        A dictionary containing:
+        - distros: list of available distro names
+        - details: dictionary with distro descriptions and metadata
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    distro_dir = os.path.join(script_dir, "automotive-image-builder", "distro")
+
+    if not os.path.exists(distro_dir):
+        return {
+            "error": f"Distro directory not found at {distro_dir}",
+            "distros": [],
+            "details": {}
+        }
+
+    try:
+        distros = []
+        details = {}
+
+        for filename in os.listdir(distro_dir):
+            if filename.endswith('.ipp.yml'):
+                distro_name = filename.replace('.ipp.yml', '')
+                distros.append(distro_name)
+
+                file_path = os.path.join(distro_dir, filename)
+                try:
+                    with open(file_path, 'r') as f:
+                        first_line = f.readline().strip()
+                        description = ""
+                        if first_line.startswith('#'):
+                            description = first_line[1:].strip()
+
+                        details[distro_name] = {
+                            "description": description,
+                            "filename": filename
+                        }
+                except Exception as e:
+                    details[distro_name] = {
+                        "description": "Unable to read description",
+                        "filename": filename,
+                        "error": str(e)
+                    }
+
+        distros.sort()
+        return {
+            "distros": distros,
+            "details": details,
+            "count": len(distros)
+        }
+
+    except Exception as e:
+        return {
+            "error": f"Error reading distro directory: {str(e)}",
+            "distros": [],
+            "details": {}
+        }
+
+@mcp.tool()
+def generate_build_command(
+    manifest_file: str,
+    output_path: str = None,
+    **kwargs
+):
+    """
+    Generates a correct automotive-image-builder build command by parsing CLI help output.
+    Uses the actual CLI interface instead of parsing source code.
+
+    Args:
+        manifest_file: Path to the .aib.yml manifest file
+        output_path: Custom output path (if not provided, will determine from code logic)
+        **kwargs: Any build command arguments (discovered dynamically from CLI help)
+
+    Returns:
+        A dictionary containing command information and available options
+    """
+    try:
+        import subprocess
+        import re
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        aib_dir = os.path.join(script_dir, "automotive-image-builder")
+        cli_path = os.path.join(aib_dir, "automotive-image-builder")
+
+        # Get build command help
+        result = subprocess.run([cli_path, "build", "--help"],
+                              capture_output=True, text=True, cwd=aib_dir)
+        if result.returncode != 0:
+            return {"error": f"Failed to get CLI help: {result.stderr}"}
+
+        help_text = result.stdout
+
+        parser_args = {}
+
+        args_section = re.search(r'options:(.*?)(?:\n\n|\Z)', help_text, re.DOTALL)
+        if args_section:
+            args_text = args_section.group(1)
+
+            arg_matches = re.finditer(r'^\s+(--?\w+(?:-\w+)*)\s+(.*?)(?=^\s+--|$)',
+                                    args_text, re.MULTILINE | re.DOTALL)
+
+            for match in arg_matches:
+                arg_name = match.group(1)
+                rest_of_line = match.group(2).strip()
+
+                words = rest_of_line.split()
+                if words and words[0].isupper() and words[0].isalpha():
+                    arg_type = words[0]
+                    description = ' '.join(words[1:])
+                else:
+                    arg_type = None
+                    description = rest_of_line
+
+                parser_args[arg_name] = {
+                    'name': arg_name,
+                    'type': arg_type,
+                    'help': description
+                }
+
+        all_options = {
+            "parsed_arguments": parser_args
+        }
+
+        if not kwargs:
+            return {
+                "error": "No parameters provided. Use available_options to see what arguments are supported.",
+                "available_options": all_options
+            }
+
+        validation_errors = []
+
+        for param_name, param_value in kwargs.items():
+            if param_value is None:
+                continue
+
+            arg_key = f"--{param_name}" if not param_name.startswith('--') else param_name
+
+            if arg_key not in parser_args:
+                validation_errors.append(f"Unknown argument '{param_name}'. Available arguments: {list(parser_args.keys())}")
+
+        if validation_errors:
+            return {
+                "error": "Validation failed",
+                "validation_errors": validation_errors,
+                "available_options": all_options
+            }
+
+        cmd_parts = ["automotive-image-builder", "build"]
+
+        for param_name, param_value in kwargs.items():
+            if param_value is None:
+                continue
+
+            arg_key = f"--{param_name}" if not param_name.startswith('--') else param_name
+
+            if arg_key in parser_args:
+                arg_info = parser_args[arg_key]
+
+                if arg_info.get('type') is None:
+                    if param_value is True:
+                        cmd_parts.append(arg_key)
+                else:
+                    if isinstance(param_value, list):
+                        for v in param_value:
+                            cmd_parts.extend([arg_key, str(v)])
+                    else:
+                        cmd_parts.extend([arg_key, str(param_value)])
+
+        cmd_parts.append(manifest_file)
+
+        if output_path:
+            final_output = output_path
+        else:
+            base_name = os.path.splitext(manifest_file)[0]
+            base_name = base_name.replace('.aib', '')
+            final_output = f"{base_name}.out"
+
+        cmd_parts.append(final_output)
+
+        command = " ".join(cmd_parts)
+
+        return {
+            "command": command,
+            "output_path": final_output,
+            "parsed_from_cli": True,
+            "available_options": all_options
+        }
+
+    except Exception as e:
+        import traceback
+        return {
+            "error": f"Failed to parse CLI: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "suggestion": "Ensure automotive-image-builder directory exists and CLI is functional"
+        }
+
+if __name__ == "__main__":
+    mcp.run()
