@@ -117,7 +117,7 @@ def get_schema():
     Returns the AIB manifest schema as a string.
 
     <IMPORTANT>
-        Unless the user explicitly asks for it, make you example simple and succint. Do not include default empty sections.
+        Unless the user explicitly asks for it, make you example simple and succinct. Do not include default empty sections.
         For instance:
             ```
             name: simple
